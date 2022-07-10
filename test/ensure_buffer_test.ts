@@ -1,11 +1,5 @@
-import { describe, expect, it } from './deps.ts';
+import { describe, ensureBuffer, expect, it } from './deps.ts';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
-
-import * as BSON from '../mod.ts';
-
-import { ensureBuffer } from '../mod.ts';
-
-const BSONTypeError = BSON.BSONTypeError;
 
 describe('ensureBuffer tests', function () {
   it('should be a function', function () {

@@ -1,6 +1,5 @@
-import { describe, expect, it } from './deps.ts';
+import { BSON, describe, expect, it } from './deps.ts';
 
-import * as BSON from '../mod.ts';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
 
 // 0x0C foo\0 \0\0\07 String.fromCharCode(0x41, 0x42, 0xfffd, 0x43, 0x44) 12

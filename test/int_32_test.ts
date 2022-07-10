@@ -1,6 +1,5 @@
-import { context, describe, expect, it } from './deps.ts';
+import { BSON, context, describe, expect, it } from './deps.ts';
 
-import * as BSON from '../mod.ts';
 const Int32 = BSON.Int32;
 
 describe('Int32', function () {

@@ -1,6 +1,5 @@
-import { describe, expect, it } from './deps.ts';
+import { BSON, describe, expect, it } from './deps.ts';
 
-import * as BSON from '../mod.ts';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
 
 const Decimal128 = BSON.Decimal128;

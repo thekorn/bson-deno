@@ -1,6 +1,4 @@
-import { beforeAll, describe, expect, it } from './deps.ts';
-
-import * as BSON from '../mod.ts';
+import { beforeAll, BSON, describe, expect, it } from './deps.ts';
 
 describe('BSON BigInt Support', function () {
   beforeAll(function () {

@@ -1,6 +1,4 @@
-import { describe, it } from './deps.ts';
-
-import * as BSON from '../mod.ts';
+import { BSON, describe, it } from './deps.ts';
 
 describe('Constructing BSON types', function () {
   it('with new keyword should work', function () {

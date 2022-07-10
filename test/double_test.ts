@@ -1,7 +1,6 @@
-import { describe, expect, it } from './deps.ts';
+import { BSON, describe, expect, it } from './deps.ts';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
 
-import * as BSON from '../mod.ts';
 const Double = BSON.Double;
 
 describe('BSON Double Precision', function () {

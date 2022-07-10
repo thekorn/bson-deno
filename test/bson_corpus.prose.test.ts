@@ -1,6 +1,5 @@
-import { describe, expect, it } from './deps.ts';
+import { BSON, describe, expect, it } from './deps.ts';
 
-import * as BSON from '../mod.ts';
 const BSONRegExp = BSON.BSONRegExp;
 
 describe('BSON Corpus Prose Tests', function () {

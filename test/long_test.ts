@@ -1,6 +1,5 @@
-import { describe, expect, it } from './deps.ts';
+import { BSON, describe, expect, it } from './deps.ts';
 
-import * as BSON from '../mod.ts';
 const Long = BSON.Long;
 
 describe('Long', function () {

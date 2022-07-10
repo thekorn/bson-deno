@@ -1,6 +1,4 @@
-import { describe, expect, it } from './deps.ts';
-
-import * as BSON from '../mod.ts';
+import { BSON, describe, expect, it } from './deps.ts';
 
 const BSONTypeError = BSON.BSONTypeError;
 const BSONError = BSON.BSONError;

@@ -1,10 +1,8 @@
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
-import { describe, expect, it } from './deps.ts';
+import { BSON, describe, expect, it } from './deps.ts';
 
 import corruptScenarios from './compliance/corrupt.ts';
 import validScenarios from './compliance/valid.ts';
-
-import * as BSON from '../mod.ts';
 
 const Code = BSON.Code;
 const Binary = BSON.Binary;
