@@ -5,6 +5,7 @@ import { DBRef } from './db_ref.ts';
 import { Decimal128 } from './decimal128.ts';
 import { Double } from './double.ts';
 import { ensureBuffer } from './ensure_buffer.ts';
+export { ensureBuffer };
 import { EJSON } from './extended_json.ts';
 import { Int32 } from './int_32.ts';
 import { Long } from './long.ts';
