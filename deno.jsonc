@@ -1,4 +1,12 @@
 {
+  "lint": {
+    "files": {
+      "exclude": [
+        "test/",
+        "_src"
+      ]
+    }
+  },
   "fmt": {
     "options": {
       "useTabs": false,
