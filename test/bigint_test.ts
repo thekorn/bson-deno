@@ -1,11 +1,6 @@
-import {
-  beforeAll,
-  describe,
-  expect,
-  it
-} from "./deps.ts";
+import { beforeAll, describe, expect, it } from './deps.ts';
 
-import * as BSON from '../mod.ts'
+import * as BSON from '../mod.ts';
 
 describe('BSON BigInt Support', function () {
   beforeAll(function () {
@@ -18,7 +13,7 @@ describe('BSON BigInt Support', function () {
   });
   it('Should serialize an int that fits in int32', function () {
     const testDoc = { b: BigInt(32) };
-    expect(() => BSON.serialize(testDoc)).toThrow("BSONTypeError");
+    expect(() => BSON.serialize(testDoc)).toThrow('BSONTypeError');
 
     // const serializedDoc = BSON.serialize(testDoc);
     // // prettier-ignore
@@ -30,7 +25,7 @@ describe('BSON BigInt Support', function () {
 
   it('Should serialize an int that fits in int64', function () {
     const testDoc = { b: BigInt(0x1ffffffff) };
-    expect(() => BSON.serialize(testDoc)).toThrow("BSONTypeError");
+    expect(() => BSON.serialize(testDoc)).toThrow('BSONTypeError');
 
     // const serializedDoc = BSON.serialize(testDoc);
     // // prettier-ignore
@@ -42,7 +37,7 @@ describe('BSON BigInt Support', function () {
 
   it('Should serialize an int that fits in decimal128', function () {
     const testDoc = { b: BigInt('9223372036854776001') }; // int64 max + 1
-    expect(() => BSON.serialize(testDoc)).toThrow("BSONTypeError");
+    expect(() => BSON.serialize(testDoc)).toThrow('BSONTypeError');
 
     // const serializedDoc = BSON.serialize(testDoc);
     // // prettier-ignore
@@ -55,9 +50,9 @@ describe('BSON BigInt Support', function () {
 
   it('Should throw if BigInt is too large to serialize', function () {
     const testDoc = {
-      b: BigInt('9'.repeat(35))
+      b: BigInt('9'.repeat(35)),
     }; // decimal 128 can only encode 34 digits of precision
-    expect(() => BSON.serialize(testDoc)).toThrow("BSONTypeError");
+    expect(() => BSON.serialize(testDoc)).toThrow('BSONTypeError');
     // expect(() => BSON.serialize(testDoc)).to.throw();
   });
 
@@ -65,12 +60,20 @@ describe('BSON BigInt Support', function () {
     const Long = BSON.Long;
     expect(new Long(BigInt('0')).toString()).toEqual('0');
     expect(new Long(BigInt('-1')).toString()).toEqual('-1');
-    expect(new Long(BigInt('-1'), true).toString()).toEqual('18446744073709551615');
-    expect(new Long(BigInt('123456789123456789')).toString()).toEqual('123456789123456789');
-    expect(new Long(BigInt('123456789123456789'), true).toString()).toEqual('123456789123456789');
-    expect(new Long(BigInt('13835058055282163712')).toString()).toEqual('-4611686018427387904');
+    expect(new Long(BigInt('-1'), true).toString()).toEqual(
+      '18446744073709551615',
+    );
+    expect(new Long(BigInt('123456789123456789')).toString()).toEqual(
+      '123456789123456789',
+    );
+    expect(new Long(BigInt('123456789123456789'), true).toString()).toEqual(
+      '123456789123456789',
+    );
+    expect(new Long(BigInt('13835058055282163712')).toString()).toEqual(
+      '-4611686018427387904',
+    );
     expect(new Long(BigInt('13835058055282163712'), true).toString()).toEqual(
-      '13835058055282163712'
+      '13835058055282163712',
     );
   });
 });
