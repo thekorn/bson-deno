@@ -1,0 +1,14 @@
+[
+  "bson_corpus.spec.test",
+  "bson_test",
+  "check_constants",
+  "extended_json_tests",
+  "globals.deno.ts",
+  "object_id_tests",
+  "promote_values_test",
+  "test_full_bson",
+  "timestamp_tests",
+  "to_bson_test",
+  "utf8_tests",
+  "uuid_tests"
+]
