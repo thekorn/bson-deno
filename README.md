@@ -13,6 +13,24 @@ don't make any manual changes to this repository, esp to `./_src` and report any
 bugs either to the build tool, or even
 [upstream](https://github.com/mongodb/js-bson)
 
+## Usage
+
+Simple example
+
+```typescript
+import * as BSON from "https://deno.land/x/bson_deno@v0.1.0/mod.ts";
+const Long = BSON.Long;
+
+// Serialize a document
+const doc = { long: Long.fromNumber(100) };
+const data = BSON.serialize(doc);
+console.log("data:", data);
+
+// Deserialize the resulting Buffer
+const doc_2 = BSON.deserialize(data);
+console.log("doc_2:", doc_2);
+```
+
 ## known issues
 
 - [ ] types cannot be initialized as function calls
