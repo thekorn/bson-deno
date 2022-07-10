@@ -5,3 +5,4 @@
   - `bson_corpus.prose.test.ts`
 - `bson_compliance_test.ts` has one _skipped_ testcase, the timestamp init is not working correctly
 - `bson_types_construction_test.ts` has skipped testcase as constructing a function call is not an option
+- lots of skipped tests in `decimal128_test.ts`

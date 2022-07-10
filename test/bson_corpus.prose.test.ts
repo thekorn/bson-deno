@@ -24,17 +24,24 @@ describe('BSON Corpus Prose Tests', function () {
     });
 
     it('Field name within a sub-document', () => {
-      expect(() => BSON.serialize({ a: { 'a\x00b': 1 } })).toThrow(/null bytes/);
+      expect(() => BSON.serialize({ a: { 'a\x00b': 1 } })).toThrow(
+        /null bytes/,
+      );
     });
 
     it('Pattern for a regular expression', () => {
       // eslint-disable-next-line no-control-regex
-      expect(() => BSON.serialize({ a: new RegExp('a\x00b') })).toThrow(/null bytes/);
-      expect(() => BSON.serialize({ a: new BSONRegExp('a\x00b') })).toThrow(/null bytes/);
+      expect(() => BSON.serialize({ a: new RegExp('a\x00b') })).toThrow(
+        /null bytes/,
+      );
+      expect(() => BSON.serialize({ a: new BSONRegExp('a\x00b') })).toThrow(
+        /null bytes/,
+      );
     });
 
     it('Flags/options for a regular expression', () => {
-      expect(() => BSON.serialize({ a: new BSONRegExp('a', 'i\x00m') })).toThrow(/null bytes/);
+      expect(() => BSON.serialize({ a: new BSONRegExp('a', 'i\x00m') }))
+        .toThrow(/null bytes/);
 
       // eslint-disable-next-line no-invalid-regexp
       expect(() => new RegExp('a', 'i\x00m')).toThrow();
