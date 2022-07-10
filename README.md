@@ -1,6 +1,6 @@
 # bson-deno
 
-![deno build & tests](https://github.com/thekorn/bson-deno/actions/workflows/deno.yml/badge.svg)
+![Deno](https://github.com/thekorn/bson-deno/actions/workflows/deno.yml/badge.svg)
 
 **Note: this is in a highly experimental state**
 
