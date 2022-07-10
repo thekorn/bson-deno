@@ -1,3 +1,5 @@
+import { process } from '../globals.deno.ts';
+
 import { Buffer } from '../buffer.deno.ts';
 import { getGlobal } from '../utils/global.ts';
 
@@ -37,9 +39,10 @@ declare let require: Function;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare let global: any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-declare let process: any; // Used by @rollup/plugin-replace
+//declare let process: any; // Used by @rollup/plugin-replace
 
 const detectRandomBytes = (): RandomBytesFunction => {
+  //@ts-ignore
   if (process.browser) {
     if (typeof window !== 'undefined') {
       // browser crypto implementation(s)
