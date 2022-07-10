@@ -42,7 +42,6 @@ declare let global: any;
 //declare let process: any; // Used by @rollup/plugin-replace
 
 const detectRandomBytes = (): RandomBytesFunction => {
-  //@ts-ignore
   if (process.browser) {
     if (typeof window !== 'undefined') {
       // browser crypto implementation(s)
