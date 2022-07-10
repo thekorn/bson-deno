@@ -7,7 +7,7 @@ describe('BSON BigInt Support', function () {
     try {
       BigInt(0);
     } catch (_) {
-      //@ts-ignore
+      //@ts-ignore: FIXME: no obvious way to mark all tests as skipped in those cases
       this.skip('JS VM does not support BigInt');
     }
   });
