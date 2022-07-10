@@ -1,5 +1,3 @@
-import { process } from '../globals.deno.ts';
-
 import { Buffer } from '../buffer.deno.ts';
 import { getGlobal } from '../utils/global.ts';
 

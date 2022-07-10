@@ -27,12 +27,12 @@ import { BSONRegExp } from './regexp.ts';
 import { BSONSymbol } from './symbol.ts';
 import { Timestamp } from './timestamp.ts';
 import { UUID } from './uuid.ts';
-export {
+export type {
   BinaryExtended,
   BinaryExtendedLegacy,
   BinarySequence,
 } from './binary.ts';
-export { CodeExtended } from './code.ts';
+export type { CodeExtended } from './code.ts';
 export {
   BSON_BINARY_SUBTYPE_BYTE_ARRAY,
   BSON_BINARY_SUBTYPE_COLUMN,
@@ -69,25 +69,26 @@ export {
   BSON_INT64_MAX,
   BSON_INT64_MIN,
 } from './constants.ts';
-export { DBRefLike } from './db_ref.ts';
-export { Decimal128Extended } from './decimal128.ts';
-export { DoubleExtended } from './double.ts';
-export { EJSON, EJSONOptions } from './extended_json.ts';
-export { Int32Extended } from './int_32.ts';
-export { LongExtended } from './long.ts';
-export { MaxKeyExtended } from './max_key.ts';
-export { MinKeyExtended } from './min_key.ts';
-export { ObjectIdExtended, ObjectIdLike } from './objectid.ts';
-export { BSONRegExpExtended, BSONRegExpExtendedLegacy } from './regexp.ts';
-export { BSONSymbolExtended } from './symbol.ts';
-export {
+export type { DBRefLike } from './db_ref.ts';
+export type { Decimal128Extended } from './decimal128.ts';
+export type { DoubleExtended } from './double.ts';
+export type { EJSONOptions } from './extended_json.ts';
+export { EJSON } from './extended_json.ts';
+export type { Int32Extended } from './int_32.ts';
+export type { LongExtended } from './long.ts';
+export type { MaxKeyExtended } from './max_key.ts';
+export type { MinKeyExtended } from './min_key.ts';
+export type { ObjectIdExtended, ObjectIdLike } from './objectid.ts';
+export type { BSONRegExpExtended, BSONRegExpExtendedLegacy } from './regexp.ts';
+export type { BSONSymbolExtended } from './symbol.ts';
+export type {
   LongWithoutOverrides,
-  LongWithoutOverridesClass,
   TimestampExtended,
   TimestampOverrides,
 } from './timestamp.ts';
-export { UUIDExtended } from './uuid.ts';
-export { DeserializeOptions, SerializeOptions };
+export { LongWithoutOverridesClass } from './timestamp.ts';
+export type { UUIDExtended } from './uuid.ts';
+export type { DeserializeOptions, SerializeOptions };
 export {
   Binary,
   BSONRegExp,
