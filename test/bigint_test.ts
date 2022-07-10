@@ -13,7 +13,7 @@ describe('BSON BigInt Support', function () {
   });
   it('Should serialize an int that fits in int32', function () {
     const testDoc = { b: BigInt(32) };
-    expect(() => BSON.serialize(testDoc)).toThrow('BSONTypeError');
+    expect(() => BSON.serialize(testDoc)).toThrow();
 
     // const serializedDoc = BSON.serialize(testDoc);
     // // prettier-ignore
@@ -25,7 +25,7 @@ describe('BSON BigInt Support', function () {
 
   it('Should serialize an int that fits in int64', function () {
     const testDoc = { b: BigInt(0x1ffffffff) };
-    expect(() => BSON.serialize(testDoc)).toThrow('BSONTypeError');
+    expect(() => BSON.serialize(testDoc)).toThrow();
 
     // const serializedDoc = BSON.serialize(testDoc);
     // // prettier-ignore
@@ -37,7 +37,7 @@ describe('BSON BigInt Support', function () {
 
   it('Should serialize an int that fits in decimal128', function () {
     const testDoc = { b: BigInt('9223372036854776001') }; // int64 max + 1
-    expect(() => BSON.serialize(testDoc)).toThrow('BSONTypeError');
+    expect(() => BSON.serialize(testDoc)).toThrow();
 
     // const serializedDoc = BSON.serialize(testDoc);
     // // prettier-ignore
@@ -52,7 +52,7 @@ describe('BSON BigInt Support', function () {
     const testDoc = {
       b: BigInt('9'.repeat(35)),
     }; // decimal 128 can only encode 34 digits of precision
-    expect(() => BSON.serialize(testDoc)).toThrow('BSONTypeError');
+    expect(() => BSON.serialize(testDoc)).toThrow();
     // expect(() => BSON.serialize(testDoc)).to.throw();
   });
 
