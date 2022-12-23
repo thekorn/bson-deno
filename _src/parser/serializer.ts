@@ -1,4 +1,3 @@
-import type { Buffer } from '../buffer.deno.ts';
 import { Binary } from '../binary.ts';
 import type { BSONSymbol, DBRef, Document, MaxKey } from '../bson.ts';
 import type { Code } from '../code.ts';
@@ -6,23 +5,21 @@ import * as constants from '../constants.ts';
 import type { DBRefLike } from '../db_ref.ts';
 import type { Decimal128 } from '../decimal128.ts';
 import type { Double } from '../double.ts';
-import { ensureBuffer } from '../ensure_buffer.ts';
-import { BSONError, BSONTypeError } from '../error.ts';
-import { isBSONType } from '../extended_json.ts';
+import { BSONError } from '../error.ts';
 import type { Int32 } from '../int_32.ts';
 import { Long } from '../long.ts';
-import { Map } from '../map.ts';
 import type { MinKey } from '../min_key.ts';
 import type { ObjectId } from '../objectid.ts';
 import type { BSONRegExp } from '../regexp.ts';
+import { ByteUtils } from '../utils/byte_utils.ts';
 import {
+  isAnyArrayBuffer,
   isBigInt64Array,
   isBigUInt64Array,
   isDate,
   isMap,
   isRegExp,
   isUint8Array,
-  normalizedFunctionString,
 } from './utils.ts';
 
 /** @public */
@@ -49,23 +46,20 @@ const ignoreKeys = new Set(['$db', '$ref', '$id', '$clusterTime']);
  */
 
 function serializeString(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: string,
   index: number,
-  isArray?: boolean,
 ) {
   // Encode String type
   buffer[index++] = constants.BSON_DATA_STRING;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes + 1;
   buffer[index - 1] = 0;
   // Write the string
-  const size = buffer.write(value, index + 4, undefined, 'utf8');
+  const size = ByteUtils.encodeUTF8Into(buffer, value, index + 4);
   // Write the size of the string to buffer
   buffer[index + 3] = ((size + 1) >> 24) & 0xff;
   buffer[index + 2] = ((size + 1) >> 16) & 0xff;
@@ -78,75 +72,58 @@ function serializeString(
   return index;
 }
 
-const SPACE_FOR_FLOAT64 = new Uint8Array(8);
-const DV_FOR_FLOAT64 = new DataView(
-  SPACE_FOR_FLOAT64.buffer,
-  SPACE_FOR_FLOAT64.byteOffset,
-  SPACE_FOR_FLOAT64.byteLength,
-);
+const NUMBER_SPACE = new DataView(new ArrayBuffer(8), 0, 8);
+const FOUR_BYTE_VIEW_ON_NUMBER = new Uint8Array(NUMBER_SPACE.buffer, 0, 4);
+const EIGHT_BYTE_VIEW_ON_NUMBER = new Uint8Array(NUMBER_SPACE.buffer, 0, 8);
+
 function serializeNumber(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: number,
   index: number,
-  isArray?: boolean,
 ) {
-  // We have an integer value
-  // TODO(NODE-2529): Add support for big int
-  if (
-    Number.isInteger(value) &&
-    value >= constants.BSON_INT32_MIN &&
-    value <= constants.BSON_INT32_MAX
-  ) {
-    // If the value fits in 32 bits encode as int32
-    // Set int type 32 bits or less
-    buffer[index++] = constants.BSON_DATA_INT;
-    // Number of written bytes
-    const numberOfWrittenBytes = !isArray
-      ? buffer.write(key, index, undefined, 'utf8')
-      : buffer.write(key, index, undefined, 'ascii');
-    // Encode the name
-    index = index + numberOfWrittenBytes;
-    buffer[index++] = 0;
-    // Write the int value
-    buffer[index++] = value & 0xff;
-    buffer[index++] = (value >> 8) & 0xff;
-    buffer[index++] = (value >> 16) & 0xff;
-    buffer[index++] = (value >> 24) & 0xff;
+  const isNegativeZero = Object.is(value, -0);
+
+  const type = !isNegativeZero &&
+      Number.isSafeInteger(value) &&
+      value <= constants.BSON_INT32_MAX &&
+      value >= constants.BSON_INT32_MIN
+    ? constants.BSON_DATA_INT
+    : constants.BSON_DATA_NUMBER;
+
+  if (type === constants.BSON_DATA_INT) {
+    NUMBER_SPACE.setInt32(0, value, true);
   } else {
-    // Encode as double
-    buffer[index++] = constants.BSON_DATA_NUMBER;
-    // Number of written bytes
-    const numberOfWrittenBytes = !isArray
-      ? buffer.write(key, index, undefined, 'utf8')
-      : buffer.write(key, index, undefined, 'ascii');
-    // Encode the name
-    index = index + numberOfWrittenBytes;
-    buffer[index++] = 0;
-    // Write float
-    DV_FOR_FLOAT64.setFloat64(0, value, true);
-    buffer.set(SPACE_FOR_FLOAT64, index);
-    // Adjust index
-    index = index + 8;
+    NUMBER_SPACE.setFloat64(0, value, true);
   }
+
+  const bytes = type === constants.BSON_DATA_INT
+    ? FOUR_BYTE_VIEW_ON_NUMBER
+    : EIGHT_BYTE_VIEW_ON_NUMBER;
+
+  buffer[index++] = type;
+
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
+  index = index + numberOfWrittenBytes;
+  buffer[index++] = 0x00;
+
+  buffer.set(bytes, index);
+  index += bytes.byteLength;
 
   return index;
 }
 
 function serializeNull(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   _: unknown,
   index: number,
-  isArray?: boolean,
 ) {
   // Set long type
   buffer[index++] = constants.BSON_DATA_NULL;
 
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
 
   // Encode the name
   index = index + numberOfWrittenBytes;
@@ -155,18 +132,15 @@ function serializeNull(
 }
 
 function serializeBoolean(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: boolean,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type
   buffer[index++] = constants.BSON_DATA_BOOLEAN;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
@@ -176,18 +150,15 @@ function serializeBoolean(
 }
 
 function serializeDate(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: Date,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type
   buffer[index++] = constants.BSON_DATA_DATE;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
@@ -210,27 +181,26 @@ function serializeDate(
 }
 
 function serializeRegExp(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: RegExp,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type
   buffer[index++] = constants.BSON_DATA_REGEXP;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
 
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
   if (value.source && value.source.match(regexp) != null) {
-    throw Error('value ' + value.source + ' must not contain null bytes');
+    throw new BSONError(
+      'value ' + value.source + ' must not contain null bytes',
+    );
   }
   // Adjust the index
-  index = index + buffer.write(value.source, index, undefined, 'utf8');
+  index = index + ByteUtils.encodeUTF8Into(buffer, value.source, index);
   // Write zero
   buffer[index++] = 0x00;
   // Write the parameters
@@ -244,18 +214,15 @@ function serializeRegExp(
 }
 
 function serializeBSONRegExp(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: BSONRegExp,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type
   buffer[index++] = constants.BSON_DATA_REGEXP;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
@@ -264,32 +231,28 @@ function serializeBSONRegExp(
   if (value.pattern.match(regexp) != null) {
     // The BSON spec doesn't allow keys with null bytes because keys are
     // null-terminated.
-    throw Error('pattern ' + value.pattern + ' must not contain null bytes');
+    throw new BSONError(
+      'pattern ' + value.pattern + ' must not contain null bytes',
+    );
   }
 
   // Adjust the index
-  index = index + buffer.write(value.pattern, index, undefined, 'utf8');
+  index = index + ByteUtils.encodeUTF8Into(buffer, value.pattern, index);
   // Write zero
   buffer[index++] = 0x00;
   // Write the options
-  index = index +
-    buffer.write(
-      value.options.split('').sort().join(''),
-      index,
-      undefined,
-      'utf8',
-    );
+  const sortedOptions = value.options.split('').sort().join('');
+  index = index + ByteUtils.encodeUTF8Into(buffer, sortedOptions, index);
   // Add ending zero
   buffer[index++] = 0x00;
   return index;
 }
 
 function serializeMinMax(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: MinKey | MaxKey,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type of either min or max key
   if (value === null) {
@@ -301,9 +264,7 @@ function serializeMinMax(
   }
 
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
@@ -311,32 +272,25 @@ function serializeMinMax(
 }
 
 function serializeObjectId(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: ObjectId,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type
   buffer[index++] = constants.BSON_DATA_OID;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
 
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
 
   // Write the objectId into the shared buffer
-  if (typeof value.id === 'string') {
-    buffer.write(value.id, index, undefined, 'binary');
-  } else if (isUint8Array(value.id)) {
-    // Use the standard JS methods here because buffer.copy() is buggy with the
-    // browser polyfill
+  if (isUint8Array(value.id)) {
     buffer.set(value.id.subarray(0, 12), index);
   } else {
-    throw new BSONTypeError(
+    throw new BSONError(
       'object [' + JSON.stringify(value) + '] is not a valid ObjectId',
     );
   }
@@ -346,18 +300,15 @@ function serializeObjectId(
 }
 
 function serializeBuffer(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
-  value: Buffer | Uint8Array,
+  value: Uint8Array,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type
   buffer[index++] = constants.BSON_DATA_BINARY;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
@@ -371,38 +322,35 @@ function serializeBuffer(
   // Write the default subtype
   buffer[index++] = constants.BSON_BINARY_SUBTYPE_DEFAULT;
   // Copy the content form the binary field to the buffer
-  buffer.set(ensureBuffer(value), index);
+  buffer.set(value, index);
   // Adjust the index
   index = index + size;
   return index;
 }
 
 function serializeObject(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: Document,
   index: number,
-  checkKeys = false,
-  depth = 0,
-  serializeFunctions = false,
-  ignoreUndefined = true,
-  isArray = false,
-  path: Document[] = [],
+  checkKeys: boolean,
+  depth: number,
+  serializeFunctions: boolean,
+  ignoreUndefined: boolean,
+  path: Set<Document>,
 ) {
-  for (let i = 0; i < path.length; i++) {
-    if (path[i] === value) throw new BSONError('cyclic dependency detected');
+  if (path.has(value)) {
+    throw new BSONError('Cannot convert circular structure to BSON');
   }
 
-  // Push value to stack
-  path.push(value);
+  path.add(value);
+
   // Write the type
   buffer[index++] = Array.isArray(value)
     ? constants.BSON_DATA_ARRAY
     : constants.BSON_DATA_OBJECT;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
@@ -416,48 +364,41 @@ function serializeObject(
     ignoreUndefined,
     path,
   );
-  // Pop stack
-  path.pop();
+
+  path.delete(value);
+
   return endIndex;
 }
 
 function serializeDecimal128(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: Decimal128,
   index: number,
-  isArray?: boolean,
 ) {
   buffer[index++] = constants.BSON_DATA_DECIMAL128;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
   // Write the data from the value
-  // Prefer the standard JS methods because their typechecking is not buggy,
-  // unlike the `buffer` polyfill's.
   buffer.set(value.bytes.subarray(0, 16), index);
   return index + 16;
 }
 
 function serializeLong(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: Long,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type
   buffer[index++] = value._bsontype === 'Long'
     ? constants.BSON_DATA_LONG
     : constants.BSON_DATA_TIMESTAMP;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
@@ -478,19 +419,16 @@ function serializeLong(
 }
 
 function serializeInt32(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: Int32 | number,
   index: number,
-  isArray?: boolean,
 ) {
   value = value.valueOf();
   // Set int type 32 bits or less
   buffer[index++] = constants.BSON_DATA_INT;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
@@ -503,27 +441,24 @@ function serializeInt32(
 }
 
 function serializeDouble(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: Double,
   index: number,
-  isArray?: boolean,
 ) {
   // Encode as double
   buffer[index++] = constants.BSON_DATA_NUMBER;
 
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
 
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
 
   // Write float
-  DV_FOR_FLOAT64.setFloat64(0, value.value, true);
-  buffer.set(SPACE_FOR_FLOAT64, index);
+  NUMBER_SPACE.setFloat64(0, value.value, true);
+  buffer.set(EIGHT_BYTE_VIEW_ON_NUMBER, index);
 
   // Adjust index
   index = index + 8;
@@ -531,27 +466,22 @@ function serializeDouble(
 }
 
 function serializeFunction(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: Function,
   index: number,
-  _checkKeys = false,
-  _depth = 0,
-  isArray?: boolean,
 ) {
   buffer[index++] = constants.BSON_DATA_CODE;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
   // Function string
-  const functionString = normalizedFunctionString(value);
+  const functionString = value.toString();
 
   // Write the string
-  const size = buffer.write(functionString, index + 4, undefined, 'utf8') + 1;
+  const size = ByteUtils.encodeUTF8Into(buffer, functionString, index + 4) + 1;
   // Write the size of the string to buffer
   buffer[index] = size & 0xff;
   buffer[index + 1] = (size >> 8) & 0xff;
@@ -565,7 +495,7 @@ function serializeFunction(
 }
 
 function serializeCode(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: Code,
   index: number,
@@ -573,15 +503,13 @@ function serializeCode(
   depth = 0,
   serializeFunctions = false,
   ignoreUndefined = true,
-  isArray = false,
+  path: Set<Document>,
 ) {
   if (value.scope && typeof value.scope === 'object') {
     // Write the type
     buffer[index++] = constants.BSON_DATA_CODE_W_SCOPE;
     // Number of written bytes
-    const numberOfWrittenBytes = !isArray
-      ? buffer.write(key, index, undefined, 'utf8')
-      : buffer.write(key, index, undefined, 'ascii');
+    const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
     // Encode the name
     index = index + numberOfWrittenBytes;
     buffer[index++] = 0;
@@ -591,14 +519,12 @@ function serializeCode(
 
     // Serialize the function
     // Get the function string
-    const functionString = typeof value.code === 'string'
-      ? value.code
-      : value.code.toString();
+    const functionString = value.code;
     // Index adjustment
     index = index + 4;
     // Write string into buffer
     const codeSize =
-      buffer.write(functionString, index + 4, undefined, 'utf8') + 1;
+      ByteUtils.encodeUTF8Into(buffer, functionString, index + 4) + 1;
     // Write the size of the string to buffer
     buffer[index] = codeSize & 0xff;
     buffer[index + 1] = (codeSize >> 8) & 0xff;
@@ -609,7 +535,6 @@ function serializeCode(
     // Write the
     index = index + codeSize + 4;
 
-    //
     // Serialize the scope value
     const endIndex = serializeInto(
       buffer,
@@ -619,6 +544,7 @@ function serializeCode(
       depth + 1,
       serializeFunctions,
       ignoreUndefined,
+      path,
     );
     index = endIndex - 1;
 
@@ -635,16 +561,15 @@ function serializeCode(
   } else {
     buffer[index++] = constants.BSON_DATA_CODE;
     // Number of written bytes
-    const numberOfWrittenBytes = !isArray
-      ? buffer.write(key, index, undefined, 'utf8')
-      : buffer.write(key, index, undefined, 'ascii');
+    const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
     // Encode the name
     index = index + numberOfWrittenBytes;
     buffer[index++] = 0;
     // Function string
     const functionString = value.code.toString();
     // Write the string
-    const size = buffer.write(functionString, index + 4, undefined, 'utf8') + 1;
+    const size = ByteUtils.encodeUTF8Into(buffer, functionString, index + 4) +
+      1;
     // Write the size of the string to buffer
     buffer[index] = size & 0xff;
     buffer[index + 1] = (size >> 8) & 0xff;
@@ -660,23 +585,20 @@ function serializeCode(
 }
 
 function serializeBinary(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: Binary,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type
   buffer[index++] = constants.BSON_DATA_BINARY;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
   // Extract the buffer
-  const data = value.value(true) as Buffer | Uint8Array;
+  const data = value.buffer;
   // Calculate size
   let size = value.position;
   // Add the deprecated 02 type 4 bytes of size to total
@@ -706,23 +628,20 @@ function serializeBinary(
 }
 
 function serializeSymbol(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: BSONSymbol,
   index: number,
-  isArray?: boolean,
 ) {
   // Write the type
   buffer[index++] = constants.BSON_DATA_SYMBOL;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
   // Encode the name
   index = index + numberOfWrittenBytes;
   buffer[index++] = 0;
   // Write the string
-  const size = buffer.write(value.value, index + 4, undefined, 'utf8') + 1;
+  const size = ByteUtils.encodeUTF8Into(buffer, value.value, index + 4) + 1;
   // Write the size of the string to buffer
   buffer[index] = size & 0xff;
   buffer[index + 1] = (size >> 8) & 0xff;
@@ -736,20 +655,18 @@ function serializeSymbol(
 }
 
 function serializeDBRef(
-  buffer: Buffer,
+  buffer: Uint8Array,
   key: string,
   value: DBRef,
   index: number,
   depth: number,
   serializeFunctions: boolean,
-  isArray?: boolean,
+  path: Set<Document>,
 ) {
   // Write the type
   buffer[index++] = constants.BSON_DATA_OBJECT;
   // Number of written bytes
-  const numberOfWrittenBytes = !isArray
-    ? buffer.write(key, index, undefined, 'utf8')
-    : buffer.write(key, index, undefined, 'ascii');
+  const numberOfWrittenBytes = ByteUtils.encodeUTF8Into(buffer, key, index);
 
   // Encode the name
   index = index + numberOfWrittenBytes;
@@ -773,6 +690,8 @@ function serializeDBRef(
     index,
     depth + 1,
     serializeFunctions,
+    true,
+    path,
   );
 
   // Calculate object size
@@ -787,20 +706,56 @@ function serializeDBRef(
 }
 
 export function serializeInto(
-  buffer: Buffer,
+  buffer: Uint8Array,
   object: Document,
-  checkKeys = false,
-  startingIndex = 0,
-  depth = 0,
-  serializeFunctions = false,
-  ignoreUndefined = true,
-  path: Document[] = [],
+  checkKeys: boolean,
+  startingIndex: number,
+  depth: number,
+  serializeFunctions: boolean,
+  ignoreUndefined: boolean,
+  path: Set<Document> | null,
 ): number {
-  startingIndex = startingIndex || 0;
-  path = path || [];
+  if (path == null) {
+    // We are at the root input
+    if (object == null) {
+      // ONLY the root should turn into an empty document
+      // BSON Empty document has a size of 5 (LE)
+      buffer[0] = 0x05;
+      buffer[1] = 0x00;
+      buffer[2] = 0x00;
+      buffer[3] = 0x00;
+      // All documents end with null terminator
+      buffer[4] = 0x00;
+      return 5;
+    }
+
+    if (Array.isArray(object)) {
+      throw new BSONError(
+        'serialize does not support an array as the root input',
+      );
+    }
+    if (typeof object !== 'object') {
+      throw new BSONError(
+        'serialize does not support non-object as the root input',
+      );
+    } else if ('_bsontype' in object && typeof object._bsontype === 'string') {
+      throw new BSONError(`BSON types cannot be serialized as a document`);
+    } else if (
+      isDate(object) ||
+      isRegExp(object) ||
+      isUint8Array(object) ||
+      isAnyArrayBuffer(object)
+    ) {
+      throw new BSONError(
+        `date, regexp, typedarray, and arraybuffer cannot be BSON documents`,
+      );
+    }
+
+    path = new Set();
+  }
 
   // Push the object to the path
-  path.push(object);
+  path.add(object);
 
   // Start place to serialize into
   let index = startingIndex + 4;
@@ -818,29 +773,27 @@ export function serializeInto(
       }
 
       if (typeof value === 'string') {
-        index = serializeString(buffer, key, value, index, true);
+        index = serializeString(buffer, key, value, index);
       } else if (typeof value === 'number') {
-        index = serializeNumber(buffer, key, value, index, true);
+        index = serializeNumber(buffer, key, value, index);
       } else if (typeof value === 'bigint') {
-        throw new BSONTypeError(
-          'Unsupported type BigInt, please use Decimal128',
-        );
+        throw new BSONError('Unsupported type BigInt, please use Decimal128');
       } else if (typeof value === 'boolean') {
-        index = serializeBoolean(buffer, key, value, index, true);
+        index = serializeBoolean(buffer, key, value, index);
       } else if (value instanceof Date || isDate(value)) {
-        index = serializeDate(buffer, key, value, index, true);
+        index = serializeDate(buffer, key, value, index);
       } else if (value === undefined) {
-        index = serializeNull(buffer, key, value, index, true);
+        index = serializeNull(buffer, key, value, index);
       } else if (value === null) {
-        index = serializeNull(buffer, key, value, index, true);
+        index = serializeNull(buffer, key, value, index);
       } else if (
         value['_bsontype'] === 'ObjectId' || value['_bsontype'] === 'ObjectID'
       ) {
-        index = serializeObjectId(buffer, key, value, index, true);
+        index = serializeObjectId(buffer, key, value, index);
       } else if (isUint8Array(value)) {
-        index = serializeBuffer(buffer, key, value, index, true);
+        index = serializeBuffer(buffer, key, value, index);
       } else if (value instanceof RegExp || isRegExp(value)) {
-        index = serializeRegExp(buffer, key, value, index, true);
+        index = serializeRegExp(buffer, key, value, index);
       } else if (typeof value === 'object' && value['_bsontype'] == null) {
         index = serializeObject(
           buffer,
@@ -851,31 +804,18 @@ export function serializeInto(
           depth,
           serializeFunctions,
           ignoreUndefined,
-          true,
           path,
         );
-      } else if (
-        typeof value === 'object' &&
-        isBSONType(value) &&
-        value._bsontype === 'Decimal128'
-      ) {
-        index = serializeDecimal128(buffer, key, value, index, true);
+      } else if (value['_bsontype'] === 'Decimal128') {
+        index = serializeDecimal128(buffer, key, value, index);
       } else if (
         value['_bsontype'] === 'Long' || value['_bsontype'] === 'Timestamp'
       ) {
-        index = serializeLong(buffer, key, value, index, true);
+        index = serializeLong(buffer, key, value, index);
       } else if (value['_bsontype'] === 'Double') {
-        index = serializeDouble(buffer, key, value, index, true);
+        index = serializeDouble(buffer, key, value, index);
       } else if (typeof value === 'function' && serializeFunctions) {
-        index = serializeFunction(
-          buffer,
-          key,
-          value,
-          index,
-          checkKeys,
-          depth,
-          true,
-        );
+        index = serializeFunction(buffer, key, value, index);
       } else if (value['_bsontype'] === 'Code') {
         index = serializeCode(
           buffer,
@@ -886,12 +826,12 @@ export function serializeInto(
           depth,
           serializeFunctions,
           ignoreUndefined,
-          true,
+          path,
         );
       } else if (value['_bsontype'] === 'Binary') {
-        index = serializeBinary(buffer, key, value, index, true);
+        index = serializeBinary(buffer, key, value, index);
       } else if (value['_bsontype'] === 'Symbol') {
-        index = serializeSymbol(buffer, key, value, index, true);
+        index = serializeSymbol(buffer, key, value, index);
       } else if (value['_bsontype'] === 'DBRef') {
         index = serializeDBRef(
           buffer,
@@ -900,18 +840,18 @@ export function serializeInto(
           index,
           depth,
           serializeFunctions,
-          true,
+          path,
         );
       } else if (value['_bsontype'] === 'BSONRegExp') {
-        index = serializeBSONRegExp(buffer, key, value, index, true);
+        index = serializeBSONRegExp(buffer, key, value, index);
       } else if (value['_bsontype'] === 'Int32') {
-        index = serializeInt32(buffer, key, value, index, true);
+        index = serializeInt32(buffer, key, value, index);
       } else if (
         value['_bsontype'] === 'MinKey' || value['_bsontype'] === 'MaxKey'
       ) {
-        index = serializeMinMax(buffer, key, value, index, true);
+        index = serializeMinMax(buffer, key, value, index);
       } else if (typeof value['_bsontype'] !== 'undefined') {
-        throw new BSONTypeError(
+        throw new BSONError(
           `Unrecognized or invalid _bsontype: ${String(value['_bsontype'])}`,
         );
       }
@@ -939,14 +879,14 @@ export function serializeInto(
         if (key.match(regexp) != null) {
           // The BSON spec doesn't allow keys with null bytes because keys are
           // null-terminated.
-          throw Error('key ' + key + ' must not contain null bytes');
+          throw new BSONError('key ' + key + ' must not contain null bytes');
         }
 
         if (checkKeys) {
           if ('$' === key[0]) {
-            throw Error('key ' + key + ' must not start with \'$\'');
+            throw new BSONError('key ' + key + ' must not start with \'$\'');
           } else if (~key.indexOf('.')) {
-            throw Error('key ' + key + ' must not contain \'.\'');
+            throw new BSONError('key ' + key + ' must not contain \'.\'');
           }
         }
       }
@@ -958,9 +898,7 @@ export function serializeInto(
       } else if (
         type === 'bigint' || isBigInt64Array(value) || isBigUInt64Array(value)
       ) {
-        throw new BSONTypeError(
-          'Unsupported type BigInt, please use Decimal128',
-        );
+        throw new BSONError('Unsupported type BigInt, please use Decimal128');
       } else if (type === 'boolean') {
         index = serializeBoolean(buffer, key, value, index);
       } else if (value instanceof Date || isDate(value)) {
@@ -987,7 +925,6 @@ export function serializeInto(
           depth,
           serializeFunctions,
           ignoreUndefined,
-          false,
           path,
         );
       } else if (type === 'object' && value['_bsontype'] === 'Decimal128') {
@@ -1008,17 +945,10 @@ export function serializeInto(
           depth,
           serializeFunctions,
           ignoreUndefined,
+          path,
         );
       } else if (typeof value === 'function' && serializeFunctions) {
-        index = serializeFunction(
-          buffer,
-          key,
-          value,
-          index,
-          checkKeys,
-          depth,
-          serializeFunctions,
-        );
+        index = serializeFunction(buffer, key, value, index);
       } else if (value['_bsontype'] === 'Binary') {
         index = serializeBinary(buffer, key, value, index);
       } else if (value['_bsontype'] === 'Symbol') {
@@ -1031,6 +961,7 @@ export function serializeInto(
           index,
           depth,
           serializeFunctions,
+          path,
         );
       } else if (value['_bsontype'] === 'BSONRegExp') {
         index = serializeBSONRegExp(buffer, key, value, index);
@@ -1041,7 +972,7 @@ export function serializeInto(
       ) {
         index = serializeMinMax(buffer, key, value, index);
       } else if (typeof value['_bsontype'] !== 'undefined') {
-        throw new BSONTypeError(
+        throw new BSONError(
           `Unrecognized or invalid _bsontype: ${String(value['_bsontype'])}`,
         );
       }
@@ -1051,12 +982,12 @@ export function serializeInto(
       // Provided a custom serialization method
       object = object.toBSON();
       if (object != null && typeof object !== 'object') {
-        throw new BSONTypeError('toBSON function did not return an object');
+        throw new BSONError('toBSON function did not return an object');
       }
     }
 
     // Iterate over all the keys
-    for (const key in object) {
+    for (const key of Object.keys(object)) {
       let value = object[key];
       // Is there an override value
       if (typeof value?.toBSON === 'function') {
@@ -1071,14 +1002,14 @@ export function serializeInto(
         if (key.match(regexp) != null) {
           // The BSON spec doesn't allow keys with null bytes because keys are
           // null-terminated.
-          throw Error('key ' + key + ' must not contain null bytes');
+          throw new BSONError('key ' + key + ' must not contain null bytes');
         }
 
         if (checkKeys) {
           if ('$' === key[0]) {
-            throw Error('key ' + key + ' must not start with \'$\'');
+            throw new BSONError('key ' + key + ' must not start with \'$\'');
           } else if (~key.indexOf('.')) {
-            throw Error('key ' + key + ' must not contain \'.\'');
+            throw new BSONError('key ' + key + ' must not contain \'.\'');
           }
         }
       }
@@ -1088,9 +1019,7 @@ export function serializeInto(
       } else if (type === 'number') {
         index = serializeNumber(buffer, key, value, index);
       } else if (type === 'bigint') {
-        throw new BSONTypeError(
-          'Unsupported type BigInt, please use Decimal128',
-        );
+        throw new BSONError('Unsupported type BigInt, please use Decimal128');
       } else if (type === 'boolean') {
         index = serializeBoolean(buffer, key, value, index);
       } else if (value instanceof Date || isDate(value)) {
@@ -1119,7 +1048,6 @@ export function serializeInto(
           depth,
           serializeFunctions,
           ignoreUndefined,
-          false,
           path,
         );
       } else if (type === 'object' && value['_bsontype'] === 'Decimal128') {
@@ -1140,17 +1068,10 @@ export function serializeInto(
           depth,
           serializeFunctions,
           ignoreUndefined,
+          path,
         );
       } else if (typeof value === 'function' && serializeFunctions) {
-        index = serializeFunction(
-          buffer,
-          key,
-          value,
-          index,
-          checkKeys,
-          depth,
-          serializeFunctions,
-        );
+        index = serializeFunction(buffer, key, value, index);
       } else if (value['_bsontype'] === 'Binary') {
         index = serializeBinary(buffer, key, value, index);
       } else if (value['_bsontype'] === 'Symbol') {
@@ -1163,6 +1084,7 @@ export function serializeInto(
           index,
           depth,
           serializeFunctions,
+          path,
         );
       } else if (value['_bsontype'] === 'BSONRegExp') {
         index = serializeBSONRegExp(buffer, key, value, index);
@@ -1173,7 +1095,7 @@ export function serializeInto(
       ) {
         index = serializeMinMax(buffer, key, value, index);
       } else if (typeof value['_bsontype'] !== 'undefined') {
-        throw new BSONTypeError(
+        throw new BSONError(
           `Unrecognized or invalid _bsontype: ${String(value['_bsontype'])}`,
         );
       }
@@ -1181,7 +1103,7 @@ export function serializeInto(
   }
 
   // Remove the path
-  path.pop();
+  path.delete(object);
 
   // Final padding byte for object
   buffer[index++] = 0x00;

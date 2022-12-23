@@ -1,5 +1,6 @@
+import { BSONError } from './error.ts';
+import type { Int32 } from './int_32.ts';
 import { Long } from './long.ts';
-import { isObjectLike } from './parser/utils.ts';
 
 /** @public */
 export type TimestampOverrides =
@@ -10,7 +11,7 @@ export type TimestampOverrides =
 /** @public */
 export type LongWithoutOverrides = new (
   low: unknown,
-  high?: number,
+  high?: number | boolean,
   unsigned?: boolean,
 ) => {
   [P in Exclude<keyof Long, TimestampOverrides>]: Long[P];
@@ -32,45 +33,75 @@ export interface TimestampExtended {
  * @category BSONType
  */
 export class Timestamp extends LongWithoutOverridesClass {
-  _bsontype!: 'Timestamp';
+  get _bsontype(): 'Timestamp' {
+    return 'Timestamp';
+  }
 
   static readonly MAX_VALUE = Long.MAX_UNSIGNED_VALUE;
 
   /**
-   * @param low - A 64-bit Long representing the Timestamp.
+   * @param int - A 64-bit bigint representing the Timestamp.
+   */
+  constructor(int: bigint);
+  /**
+   * @param long - A 64-bit Long representing the Timestamp.
    */
   constructor(long: Long);
   /**
    * @param value - A pair of two values indicating timestamp and increment.
    */
   constructor(value: { t: number; i: number });
-  /**
-   * @param low - the low (signed) 32 bits of the Timestamp.
-   * @param high - the high (signed) 32 bits of the Timestamp.
-   * @deprecated Please use `Timestamp({ t: high, i: low })` or `Timestamp(Long(low, high))` instead.
-   */
-  constructor(low: number, high: number);
-  constructor(low: number | Long | { t: number; i: number }, high?: number) {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-expect-error
-    if (!(this instanceof Timestamp)) return new Timestamp(low, high);
-
-    if (Long.isLong(low)) {
+  constructor(low?: bigint | Long | { t: number | Int32; i: number | Int32 }) {
+    if (low == null) {
+      super(0, 0, true);
+    } else if (typeof low === 'bigint') {
+      super(low, true);
+    } else if (Long.isLong(low)) {
       super(low.low, low.high, true);
-    } else if (
-      isObjectLike(low) && typeof low.t !== 'undefined' &&
-      typeof low.i !== 'undefined'
-    ) {
-      super(low.i, low.t, true);
+    } else if (typeof low === 'object' && 't' in low && 'i' in low) {
+      if (
+        typeof low.t !== 'number' &&
+        (typeof low.t !== 'object' || low.t._bsontype !== 'Int32')
+      ) {
+        throw new BSONError(
+          'Timestamp constructed from { t, i } must provide t as a number',
+        );
+      }
+      if (
+        typeof low.i !== 'number' &&
+        (typeof low.i !== 'object' || low.i._bsontype !== 'Int32')
+      ) {
+        throw new BSONError(
+          'Timestamp constructed from { t, i } must provide i as a number',
+        );
+      }
+      if (low.t < 0) {
+        throw new BSONError(
+          'Timestamp constructed from { t, i } must provide a positive t',
+        );
+      }
+      if (low.i < 0) {
+        throw new BSONError(
+          'Timestamp constructed from { t, i } must provide a positive i',
+        );
+      }
+      if (low.t > 0xffff_ffff) {
+        throw new BSONError(
+          'Timestamp constructed from { t, i } must provide t equal or less than uint32 max',
+        );
+      }
+      if (low.i > 0xffff_ffff) {
+        throw new BSONError(
+          'Timestamp constructed from { t, i } must provide i equal or less than uint32 max',
+        );
+      }
+
+      super(low.i.valueOf(), low.t.valueOf(), true);
     } else {
-      super(low, high, true);
+      throw new BSONError(
+        'A Timestamp can only be constructed with: bigint, Long, or { t: number; i: number }',
+      );
     }
-    Object.defineProperty(this, '_bsontype', {
-      value: 'Timestamp',
-      writable: false,
-      configurable: false,
-      enumerable: false,
-    });
   }
 
   toJSON(): { $timestamp: string } {
@@ -96,7 +127,7 @@ export class Timestamp extends LongWithoutOverridesClass {
    * @param highBits - the high 32-bits.
    */
   static fromBits(lowBits: number, highBits: number): Timestamp {
-    return new Timestamp(lowBits, highBits);
+    return new Timestamp({ i: lowBits, t: highBits });
   }
 
   /**
@@ -116,7 +147,14 @@ export class Timestamp extends LongWithoutOverridesClass {
 
   /** @internal */
   static fromExtendedJSON(doc: TimestampExtended): Timestamp {
-    return new Timestamp(doc.$timestamp);
+    // The Long check is necessary because extended JSON has different behavior given the size of the input number
+    const i = Long.isLong(doc.$timestamp.i)
+      ? doc.$timestamp.i.getLowBitsUnsigned() // Need to fetch the least significant 32 bits
+      : doc.$timestamp.i;
+    const t = Long.isLong(doc.$timestamp.t)
+      ? doc.$timestamp.t.getLowBitsUnsigned() // Need to fetch the least significant 32 bits
+      : doc.$timestamp.t;
+    return new Timestamp({ t, i });
   }
 
   /** @internal */

@@ -1,4 +1,4 @@
-import { BSONError, BSONTypeError } from './error.ts';
+import { BSONError } from './error.ts';
 import type { EJSONOptions } from './extended_json.ts';
 
 function alphabetize(str: string): string {
@@ -25,7 +25,9 @@ export interface BSONRegExpExtended {
  * @category BSONType
  */
 export class BSONRegExp {
-  _bsontype!: 'BSONRegExp';
+  get _bsontype(): 'BSONRegExp' {
+    return 'BSONRegExp';
+  }
 
   pattern!: string;
   options!: string;
@@ -34,8 +36,6 @@ export class BSONRegExp {
    * @param options - The regular expression options
    */
   constructor(pattern: string, options?: string) {
-    if (!(this instanceof BSONRegExp)) return new BSONRegExp(pattern, options);
-
     this.pattern = pattern;
     this.options = alphabetize(options ?? '');
 
@@ -113,12 +113,8 @@ export class BSONRegExp {
         BSONRegExp.parseOptions(doc.$regularExpression.options),
       );
     }
-    throw new BSONTypeError(
+    throw new BSONError(
       `Unexpected BSONRegExp EJSON object form: ${JSON.stringify(doc)}`,
     );
   }
 }
-
-Object.defineProperty(BSONRegExp.prototype, '_bsontype', {
-  value: 'BSONRegExp',
-});

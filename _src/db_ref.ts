@@ -1,7 +1,6 @@
 import type { Document } from './bson.ts';
 import type { EJSONOptions } from './extended_json.ts';
 import type { ObjectId } from './objectid.ts';
-import { isObjectLike } from './parser/utils.ts';
 
 /** @public */
 export interface DBRefLike {
@@ -13,10 +12,14 @@ export interface DBRefLike {
 /** @internal */
 export function isDBRefLike(value: unknown): value is DBRefLike {
   return (
-    isObjectLike(value) &&
+    value != null &&
+    typeof value === 'object' &&
+    '$id' in value &&
     value.$id != null &&
+    '$ref' in value &&
     typeof value.$ref === 'string' &&
-    (value.$db == null || typeof value.$db === 'string')
+    // If '$db' is defined it MUST be a string, otherwise it should be absent
+    (!('$db' in value) || ('$db' in value && typeof value.$db === 'string'))
   );
 }
 
@@ -26,7 +29,9 @@ export function isDBRefLike(value: unknown): value is DBRefLike {
  * @category BSONType
  */
 export class DBRef {
-  _bsontype!: 'DBRef';
+  get _bsontype(): 'DBRef' {
+    return 'DBRef';
+  }
 
   collection!: string;
   oid!: ObjectId;
@@ -44,8 +49,6 @@ export class DBRef {
     db?: string,
     fields?: Document,
   ) {
-    if (!(this instanceof DBRef)) return new DBRef(collection, oid, db, fields);
-
     // check if namespace has been provided
     const parts = collection.split('.');
     if (parts.length === 2) {
@@ -126,5 +129,3 @@ export class DBRef {
     })`;
   }
 }
-
-Object.defineProperty(DBRef.prototype, '_bsontype', { value: 'DBRef' });

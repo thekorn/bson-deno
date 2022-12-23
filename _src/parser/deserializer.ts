@@ -1,4 +1,3 @@
-import { Buffer } from '../buffer.deno.ts';
 import { Binary } from '../binary.ts';
 import type { Document } from '../bson.ts';
 import { Code } from '../code.ts';
@@ -15,20 +14,11 @@ import { ObjectId } from '../objectid.ts';
 import { BSONRegExp } from '../regexp.ts';
 import { BSONSymbol } from '../symbol.ts';
 import { Timestamp } from '../timestamp.ts';
+import { ByteUtils } from '../utils/byte_utils.ts';
 import { validateUtf8 } from '../validate_utf8.ts';
 
 /** @public */
 export interface DeserializeOptions {
-  /** evaluate functions in the BSON document scoped to the object deserialized. */
-  evalFunctions?: boolean;
-  /** cache evaluated functions for reuse. */
-  cacheFunctions?: boolean;
-  /**
-   * use a crc32 code for caching, otherwise use the string of the function.
-   * @deprecated this option to use the crc32 function never worked as intended
-   * due to the fact that the crc32 function itself was never implemented.
-   */
-  cacheFunctionsCrc32?: boolean;
   /** when deserializing a Long will fit it into a Number if it's smaller than 53 bits */
   promoteLongs?: boolean;
   /** when deserializing a Binary will return it as a node.js Buffer instance. */
@@ -67,10 +57,8 @@ export interface DeserializeOptions {
 const JS_INT_MAX_LONG = Long.fromNumber(constants.JS_INT_MAX);
 const JS_INT_MIN_LONG = Long.fromNumber(constants.JS_INT_MIN);
 
-const functionCache: { [hash: string]: Function } = {};
-
-export function deserialize(
-  buffer: Buffer,
+export function internalDeserialize(
+  buffer: Uint8Array,
   options: DeserializeOptions,
   isArray?: boolean,
 ): Document {
@@ -118,18 +106,11 @@ export function deserialize(
 const allowedDBRefKeys = /^\$ref$|^\$id$|^\$db$/;
 
 function deserializeObject(
-  buffer: Buffer,
+  buffer: Uint8Array,
   index: number,
   options: DeserializeOptions,
   isArray = false,
 ) {
-  const evalFunctions = options['evalFunctions'] == null
-    ? false
-    : options['evalFunctions'];
-  const cacheFunctions = options['cacheFunctions'] == null
-    ? false
-    : options['cacheFunctions'];
-
   const fieldsAsRaw = options['fieldsAsRaw'] == null
     ? null
     : options['fieldsAsRaw'];
@@ -251,7 +232,9 @@ function deserializeObject(
     }
 
     // Represents the key
-    const name = isArray ? arrayIndex++ : buffer.toString('utf8', index, i);
+    const name = isArray
+      ? arrayIndex++
+      : ByteUtils.toUTF8(buffer.subarray(index, i));
 
     // shouldValidateKey is true if the key should be validated, false otherwise
     let shouldValidateKey = true;
@@ -288,8 +271,8 @@ function deserializeObject(
       );
       index = index + stringSize;
     } else if (elementType === constants.BSON_DATA_OID) {
-      const oid = Buffer.alloc(12);
-      buffer.copy(oid, 0, index, index + 12);
+      const oid = ByteUtils.allocate(12);
+      oid.set(buffer.subarray(index, index + 12));
       value = new ObjectId(oid);
       index = index + 12;
     } else if (
@@ -358,23 +341,16 @@ function deserializeObject(
         (buffer[index + 1] << 8) |
         (buffer[index + 2] << 16) |
         (buffer[index + 3] << 24);
-      let arrayOptions = options;
+      let arrayOptions: DeserializeOptions = options;
 
       // Stop index
       const stopIndex = index + objectSize;
 
       // All elements of array to be returned as raw bson
       if (fieldsAsRaw && fieldsAsRaw[name]) {
-        arrayOptions = {};
-        for (const n in options) {
-          (
-            arrayOptions as {
-              [key: string]: DeserializeOptions[keyof DeserializeOptions];
-            }
-          )[n] = options[n as keyof DeserializeOptions];
-        }
-        arrayOptions['raw'] = true;
+        arrayOptions = { ...options, raw: true };
       }
+
       if (!globalUTFValidation) {
         arrayOptions = {
           ...arrayOptions,
@@ -414,23 +390,13 @@ function deserializeObject(
       }
     } else if (elementType === constants.BSON_DATA_DECIMAL128) {
       // Buffer to contain the decimal bytes
-      const bytes = Buffer.alloc(16);
+      const bytes = ByteUtils.allocate(16);
       // Copy the next 16 bytes into the bytes buffer
-      buffer.copy(bytes, 0, index, index + 16);
+      bytes.set(buffer.subarray(index, index + 16), 0);
       // Update index
       index = index + 16;
       // Assign the new Decimal128 value
-      const decimal128 = new Decimal128(bytes) as Decimal128 | {
-        toObject(): unknown;
-      };
-      // If we have an alternative mapper use that
-      if (
-        'toObject' in decimal128 && typeof decimal128.toObject === 'function'
-      ) {
-        value = decimal128.toObject();
-      } else {
-        value = decimal128;
-      }
+      value = new Decimal128(bytes);
     } else if (elementType === constants.BSON_DATA_BINARY) {
       let binarySize = buffer[index++] |
         (buffer[index++] << 8) |
@@ -475,12 +441,17 @@ function deserializeObject(
         }
 
         if (promoteBuffers && promoteValues) {
-          value = buffer.slice(index, index + binarySize);
+          value = ByteUtils.toLocalBufferType(
+            buffer.slice(index, index + binarySize),
+          );
         } else {
           value = new Binary(buffer.slice(index, index + binarySize), subType);
+          if (subType === constants.BSON_BINARY_SUBTYPE_UUID_NEW) {
+            value = value.toUUID();
+          }
         }
       } else {
-        const _buffer = Buffer.alloc(binarySize);
+        const _buffer = ByteUtils.allocate(binarySize);
         // If we have subtype 2 skip the 4 bytes for the size
         if (subType === Binary.SUBTYPE_BYTE_ARRAY) {
           binarySize = buffer[index++] |
@@ -511,8 +482,11 @@ function deserializeObject(
 
         if (promoteBuffers && promoteValues) {
           value = _buffer;
+        } else if (subType === constants.BSON_BINARY_SUBTYPE_UUID_NEW) {
+          value = new Binary(buffer.slice(index, index + binarySize), subType)
+            .toUUID();
         } else {
-          value = new Binary(_buffer, subType);
+          value = new Binary(buffer.slice(index, index + binarySize), subType);
         }
       }
 
@@ -532,7 +506,7 @@ function deserializeObject(
         throw new BSONError('Bad BSON Document: illegal CString');
       }
       // Return the C string
-      const source = buffer.toString('utf8', index, i);
+      const source = ByteUtils.toUTF8(buffer.subarray(index, i));
       // Create the regexp
       index = i + 1;
 
@@ -547,7 +521,7 @@ function deserializeObject(
         throw new BSONError('Bad BSON Document: illegal CString');
       }
       // Return the C string
-      const regExpOptions = buffer.toString('utf8', index, i);
+      const regExpOptions = ByteUtils.toUTF8(buffer.subarray(index, i));
       index = i + 1;
 
       // For each option add the corresponding one for javascript
@@ -583,7 +557,7 @@ function deserializeObject(
         throw new BSONError('Bad BSON Document: illegal CString');
       }
       // Return the C string
-      const source = buffer.toString('utf8', index, i);
+      const source = ByteUtils.toUTF8(buffer.subarray(index, i));
       index = i + 1;
 
       // Get the start search index
@@ -597,7 +571,7 @@ function deserializeObject(
         throw new BSONError('Bad BSON Document: illegal CString');
       }
       // Return the C string
-      const regExpOptions = buffer.toString('utf8', index, i);
+      const regExpOptions = ByteUtils.toUTF8(buffer.subarray(index, i));
       index = i + 1;
 
       // Set the object
@@ -623,16 +597,19 @@ function deserializeObject(
       value = promoteValues ? symbol : new BSONSymbol(symbol);
       index = index + stringSize;
     } else if (elementType === constants.BSON_DATA_TIMESTAMP) {
-      const lowBits = buffer[index++] |
-        (buffer[index++] << 8) |
-        (buffer[index++] << 16) |
-        (buffer[index++] << 24);
-      const highBits = buffer[index++] |
-        (buffer[index++] << 8) |
-        (buffer[index++] << 16) |
-        (buffer[index++] << 24);
+      // We intentionally **do not** use bit shifting here
+      // Bit shifting in javascript coerces numbers to **signed** int32s
+      // We need to keep i, and t unsigned
+      const i = buffer[index++] +
+        buffer[index++] * (1 << 8) +
+        buffer[index++] * (1 << 16) +
+        buffer[index++] * (1 << 24);
+      const t = buffer[index++] +
+        buffer[index++] * (1 << 8) +
+        buffer[index++] * (1 << 16) +
+        buffer[index++] * (1 << 24);
 
-      value = new Timestamp(lowBits, highBits);
+      value = new Timestamp({ i, t });
     } else if (elementType === constants.BSON_DATA_MIN_KEY) {
       value = new MinKey();
     } else if (elementType === constants.BSON_DATA_MAX_KEY) {
@@ -656,18 +633,7 @@ function deserializeObject(
         shouldValidateKey,
       );
 
-      // If we are evaluating the functions
-      if (evalFunctions) {
-        // If we have cache enabled let's look for the md5 of the function in the cache
-        if (cacheFunctions) {
-          // Got to do this to avoid V8 deoptimizing the call due to finding eval
-          value = isolateEval(functionString, functionCache, object);
-        } else {
-          value = isolateEval(functionString);
-        }
-      } else {
-        value = new Code(functionString);
-      }
+      value = new Code(functionString);
 
       // Update parse index position
       index = index + stringSize;
@@ -733,20 +699,7 @@ function deserializeObject(
         );
       }
 
-      // If we are evaluating the functions
-      if (evalFunctions) {
-        // If we have cache enabled let's look for the md5 of the function in the cache
-        if (cacheFunctions) {
-          // Got to do this to avoid V8 deoptimizing the call due to finding eval
-          value = isolateEval(functionString, functionCache, object);
-        } else {
-          value = isolateEval(functionString);
-        }
-
-        value.scope = scopeObject;
-      } else {
-        value = new Code(functionString, scopeObject);
-      }
+      value = new Code(functionString, scopeObject);
     } else if (elementType === constants.BSON_DATA_DBPOINTER) {
       // Get the code string size
       const stringSize = buffer[index++] |
@@ -767,13 +720,15 @@ function deserializeObject(
           throw new BSONError('Invalid UTF-8 string in BSON document');
         }
       }
-      const namespace = buffer.toString('utf8', index, index + stringSize - 1);
+      const namespace = ByteUtils.toUTF8(
+        buffer.subarray(index, index + stringSize - 1),
+      );
       // Update parse index position
       index = index + stringSize;
 
       // Read the oid
-      const oidBuffer = Buffer.alloc(12);
-      buffer.copy(oidBuffer, 0, index, index + 12);
+      const oidBuffer = ByteUtils.allocate(12);
+      oidBuffer.set(buffer.subarray(index, index + 12), 0);
       const oid = new ObjectId(oidBuffer);
 
       // Update the index
@@ -820,35 +775,13 @@ function deserializeObject(
   return object;
 }
 
-/**
- * Ensure eval is isolated, store the result in functionCache.
- *
- * @internal
- */
-function isolateEval(
-  functionString: string,
-  functionCache?: { [hash: string]: Function },
-  object?: Document,
-) {
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  if (!functionCache) return new Function(functionString);
-  // Check for cache hit, eval if missing and return cached function
-  if (functionCache[functionString] == null) {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    functionCache[functionString] = new Function(functionString);
-  }
-
-  // Set the object
-  return functionCache[functionString].bind(object);
-}
-
 function getValidatedString(
-  buffer: Buffer,
+  buffer: Uint8Array,
   start: number,
   end: number,
   shouldValidateUtf8: boolean,
 ) {
-  const value = buffer.toString('utf8', start, end);
+  const value = ByteUtils.toUTF8(buffer.subarray(start, end));
   // if utf8 validation is on, do the check
   if (shouldValidateUtf8) {
     for (let i = 0; i < value.length; i++) {

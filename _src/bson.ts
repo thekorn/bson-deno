@@ -1,79 +1,35 @@
-import { Buffer } from './buffer.deno.ts';
-import { Binary } from './binary.ts';
+import { Binary, UUID } from './binary.ts';
 import { Code } from './code.ts';
 import { DBRef } from './db_ref.ts';
 import { Decimal128 } from './decimal128.ts';
 import { Double } from './double.ts';
-import { ensureBuffer } from './ensure_buffer.ts';
-import { EJSON } from './extended_json.ts';
 import { Int32 } from './int_32.ts';
 import { Long } from './long.ts';
-import { Map } from './map.ts';
 import { MaxKey } from './max_key.ts';
 import { MinKey } from './min_key.ts';
 import { ObjectId } from './objectid.ts';
-import { BSONError, BSONTypeError } from './error.ts';
-import { calculateObjectSize as internalCalculateObjectSize } from './parser/calculate_size.ts';
+import { internalCalculateObjectSize } from './parser/calculate_size.ts';
 // Parts of the parser
 import {
-  deserialize as internalDeserialize,
   DeserializeOptions,
+  internalDeserialize,
 } from './parser/deserializer.ts';
-import {
-  serializeInto as internalSerialize,
-  SerializeOptions,
-} from './parser/serializer.ts';
+import { serializeInto, SerializeOptions } from './parser/serializer.ts';
 import { BSONRegExp } from './regexp.ts';
 import { BSONSymbol } from './symbol.ts';
 import { Timestamp } from './timestamp.ts';
-import { UUID } from './uuid.ts';
+import { ByteUtils } from './utils/byte_utils.ts';
 export type {
   BinaryExtended,
   BinaryExtendedLegacy,
   BinarySequence,
+  UUIDExtended,
 } from './binary.ts';
 export type { CodeExtended } from './code.ts';
-export {
-  BSON_BINARY_SUBTYPE_BYTE_ARRAY,
-  BSON_BINARY_SUBTYPE_COLUMN,
-  BSON_BINARY_SUBTYPE_DEFAULT,
-  BSON_BINARY_SUBTYPE_ENCRYPTED,
-  BSON_BINARY_SUBTYPE_FUNCTION,
-  BSON_BINARY_SUBTYPE_MD5,
-  BSON_BINARY_SUBTYPE_USER_DEFINED,
-  BSON_BINARY_SUBTYPE_UUID,
-  BSON_BINARY_SUBTYPE_UUID_NEW,
-  BSON_DATA_ARRAY,
-  BSON_DATA_BINARY,
-  BSON_DATA_BOOLEAN,
-  BSON_DATA_CODE,
-  BSON_DATA_CODE_W_SCOPE,
-  BSON_DATA_DATE,
-  BSON_DATA_DBPOINTER,
-  BSON_DATA_DECIMAL128,
-  BSON_DATA_INT,
-  BSON_DATA_LONG,
-  BSON_DATA_MAX_KEY,
-  BSON_DATA_MIN_KEY,
-  BSON_DATA_NULL,
-  BSON_DATA_NUMBER,
-  BSON_DATA_OBJECT,
-  BSON_DATA_OID,
-  BSON_DATA_REGEXP,
-  BSON_DATA_STRING,
-  BSON_DATA_SYMBOL,
-  BSON_DATA_TIMESTAMP,
-  BSON_DATA_UNDEFINED,
-  BSON_INT32_MAX,
-  BSON_INT32_MIN,
-  BSON_INT64_MAX,
-  BSON_INT64_MIN,
-} from './constants.ts';
 export type { DBRefLike } from './db_ref.ts';
 export type { Decimal128Extended } from './decimal128.ts';
 export type { DoubleExtended } from './double.ts';
 export type { EJSONOptions } from './extended_json.ts';
-export { EJSON } from './extended_json.ts';
 export type { Int32Extended } from './int_32.ts';
 export type { LongExtended } from './long.ts';
 export type { MaxKeyExtended } from './max_key.ts';
@@ -86,9 +42,9 @@ export type {
   TimestampExtended,
   TimestampOverrides,
 } from './timestamp.ts';
-export { LongWithoutOverridesClass } from './timestamp.ts';
-export type { UUIDExtended } from './uuid.ts';
+export type { LongWithoutOverridesClass } from './timestamp.ts';
 export type { DeserializeOptions, SerializeOptions };
+
 export {
   Binary,
   BSONRegExp,
@@ -99,18 +55,15 @@ export {
   Double,
   Int32,
   Long,
-  Map,
   MaxKey,
   MinKey,
   ObjectId,
-  // In 4.0.0 and 4.0.1, this property name was changed to ObjectId to match the class name.
-  // This caused interoperability problems with previous versions of the library, so in
-  // later builds we changed it back to ObjectID (capital D) to match legacy implementations.
-  ObjectId as ObjectID,
   Timestamp,
   UUID,
 };
-export { BSONError, BSONTypeError } from './error.ts';
+export { BSONError } from './error.ts';
+export { BSONType } from './constants.ts';
+export { EJSON } from './extended_json.ts';
 
 /** @public */
 export interface Document {
@@ -123,7 +76,7 @@ export interface Document {
 const MAXSIZE = 1024 * 1024 * 17;
 
 // Current Internal Temporary Serialization Buffer
-let buffer = Buffer.alloc(MAXSIZE);
+let buffer = ByteUtils.allocate(MAXSIZE);
 
 /**
  * Sets the size of the internal serialization buffer.
@@ -134,7 +87,7 @@ let buffer = Buffer.alloc(MAXSIZE);
 export function setInternalBufferSize(size: number): void {
   // Resize the internal serialization buffer if needed
   if (buffer.length < size) {
-    buffer = Buffer.alloc(size);
+    buffer = ByteUtils.allocate(size);
   }
 }
 
@@ -148,7 +101,7 @@ export function setInternalBufferSize(size: number): void {
 export function serialize(
   object: Document,
   options: SerializeOptions = {},
-): Buffer {
+): Uint8Array {
   // Unpack the options
   const checkKeys = typeof options.checkKeys === 'boolean'
     ? options.checkKeys
@@ -166,11 +119,11 @@ export function serialize(
 
   // Resize the internal serialization buffer if needed
   if (buffer.length < minInternalBufferSize) {
-    buffer = Buffer.alloc(minInternalBufferSize);
+    buffer = ByteUtils.allocate(minInternalBufferSize);
   }
 
   // Attempt to serialize
-  const serializationIndex = internalSerialize(
+  const serializationIndex = serializeInto(
     buffer,
     object,
     checkKeys,
@@ -178,14 +131,14 @@ export function serialize(
     0,
     serializeFunctions,
     ignoreUndefined,
-    [],
+    null,
   );
 
   // Create the final buffer
-  const finishedBuffer = Buffer.alloc(serializationIndex);
+  const finishedBuffer = ByteUtils.allocate(serializationIndex);
 
   // Copy into the finished buffer
-  buffer.copy(finishedBuffer, 0, 0, finishedBuffer.length);
+  finishedBuffer.set(buffer.subarray(0, serializationIndex), 0);
 
   // Return the buffer
   return finishedBuffer;
@@ -202,7 +155,7 @@ export function serialize(
  */
 export function serializeWithBufferAndIndex(
   object: Document,
-  finalBuffer: Buffer,
+  finalBuffer: Uint8Array,
   options: SerializeOptions = {},
 ): number {
   // Unpack the options
@@ -218,7 +171,7 @@ export function serializeWithBufferAndIndex(
   const startIndex = typeof options.index === 'number' ? options.index : 0;
 
   // Attempt to serialize
-  const serializationIndex = internalSerialize(
+  const serializationIndex = serializeInto(
     buffer,
     object,
     checkKeys,
@@ -226,8 +179,10 @@ export function serializeWithBufferAndIndex(
     0,
     serializeFunctions,
     ignoreUndefined,
+    null,
   );
-  buffer.copy(finalBuffer, startIndex, 0, serializationIndex);
+
+  finalBuffer.set(buffer.subarray(0, serializationIndex), startIndex);
 
   // Return the index
   return startIndex + serializationIndex - 1;
@@ -241,13 +196,10 @@ export function serializeWithBufferAndIndex(
  * @public
  */
 export function deserialize(
-  buffer: Buffer | ArrayBufferView | ArrayBuffer,
+  buffer: Uint8Array,
   options: DeserializeOptions = {},
 ): Document {
-  return internalDeserialize(
-    buffer instanceof Buffer ? buffer : ensureBuffer(buffer),
-    options,
-  );
+  return internalDeserialize(ByteUtils.toLocalBufferType(buffer), options);
 }
 
 /** @public */
@@ -296,7 +248,7 @@ export function calculateObjectSize(
  * @public
  */
 export function deserializeStream(
-  data: Buffer | ArrayBufferView | ArrayBuffer,
+  data: Uint8Array | ArrayBuffer,
   startIndex: number,
   numberOfDocuments: number,
   documents: Document[],
@@ -307,7 +259,7 @@ export function deserializeStream(
     { allowObjectSmallerThanBufferSize: true, index: 0 },
     options,
   );
-  const bufferData = ensureBuffer(data);
+  const bufferData = ByteUtils.toLocalBufferType(data);
 
   let index = startIndex;
   // Loop over all documents
@@ -331,40 +283,3 @@ export function deserializeStream(
   // Return object containing end index of parsing and list of documents
   return index;
 }
-
-/**
- * BSON default export
- * @deprecated Please use named exports
- * @privateRemarks
- * We want to someday deprecate the default export,
- * so none of the new TS types are being exported on the default
- * @public
- */
-const BSON = {
-  Binary,
-  Code,
-  DBRef,
-  Decimal128,
-  Double,
-  Int32,
-  Long,
-  UUID,
-  Map,
-  MaxKey,
-  MinKey,
-  ObjectId,
-  ObjectID: ObjectId,
-  BSONRegExp,
-  BSONSymbol,
-  Timestamp,
-  EJSON,
-  setInternalBufferSize,
-  serialize,
-  serializeWithBufferAndIndex,
-  deserialize,
-  calculateObjectSize,
-  deserializeStream,
-  BSONError,
-  BSONTypeError,
-};
-export default BSON;

@@ -1,7 +1,7 @@
-import { Buffer } from './buffer.deno.ts';
-import { BSONTypeError } from './error.ts';
+import { BSONError } from './error.ts';
 import { Long } from './long.ts';
 import { isUint8Array } from './parser/utils.ts';
+import { ByteUtils } from './utils/byte_utils.ts';
 
 const PARSE_STRING_REGEXP = /^(\+|-)?(\d+|(\d*\.\d*))?(E|e)?([-+])?(\d+)?$/;
 const PARSE_INF_REGEXP = /^(\+|-)?(Infinity|inf)$/i;
@@ -13,61 +13,67 @@ const EXPONENT_BIAS = 6176;
 const MAX_DIGITS = 34;
 
 // Nan value bits as 32 bit values (due to lack of longs)
-const NAN_BUFFER = [
-  0x7c,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-].reverse();
+const NAN_BUFFER = ByteUtils.fromNumberArray(
+  [
+    0x7c,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+  ].reverse(),
+);
 // Infinity value bits 32 bit values (due to lack of longs)
-const INF_NEGATIVE_BUFFER = [
-  0xf8,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-].reverse();
-const INF_POSITIVE_BUFFER = [
-  0x78,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-].reverse();
+const INF_NEGATIVE_BUFFER = ByteUtils.fromNumberArray(
+  [
+    0xf8,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+  ].reverse(),
+);
+const INF_POSITIVE_BUFFER = ByteUtils.fromNumberArray(
+  [
+    0x78,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+  ].reverse(),
+);
 
 const EXPONENT_REGEX = /^([-+])?(\d+)?$/;
 
@@ -156,7 +162,7 @@ function lessThan(left: Long, right: Long): boolean {
 }
 
 function invalidErr(string: string, message: string) {
-  throw new BSONTypeError(
+  throw new BSONError(
     `"${string}" is not a valid Decimal128 string - ${message}`,
   );
 }
@@ -172,26 +178,26 @@ export interface Decimal128Extended {
  * @category BSONType
  */
 export class Decimal128 {
-  _bsontype!: 'Decimal128';
+  get _bsontype(): 'Decimal128' {
+    return 'Decimal128';
+  }
 
-  readonly bytes!: Buffer;
+  readonly bytes!: Uint8Array;
 
   /**
    * @param bytes - a buffer containing the raw Decimal128 bytes in little endian order,
    *                or a string representation as returned by .toString()
    */
-  constructor(bytes: Buffer | string) {
-    if (!(this instanceof Decimal128)) return new Decimal128(bytes);
-
+  constructor(bytes: Uint8Array | string) {
     if (typeof bytes === 'string') {
       this.bytes = Decimal128.fromString(bytes).bytes;
     } else if (isUint8Array(bytes)) {
       if (bytes.byteLength !== 16) {
-        throw new BSONTypeError('Decimal128 must take a Buffer of 16 bytes');
+        throw new BSONError('Decimal128 must take a Buffer of 16 bytes');
       }
       this.bytes = bytes;
     } else {
-      throw new BSONTypeError('Decimal128 must take a Buffer or string');
+      throw new BSONError('Decimal128 must take a Buffer or string');
     }
   }
 
@@ -246,7 +252,7 @@ export class Decimal128 {
     // TODO: implementing a custom parsing for this, or refactoring the regex would yield
     //       further gains.
     if (representation.length >= 7000) {
-      throw new BSONTypeError(
+      throw new BSONError(
         '' + representation + ' not a valid Decimal128 string',
       );
     }
@@ -260,7 +266,7 @@ export class Decimal128 {
     if (
       (!stringMatch && !infMatch && !nanMatch) || representation.length === 0
     ) {
-      throw new BSONTypeError(
+      throw new BSONError(
         '' + representation + ' not a valid Decimal128 string',
       );
     }
@@ -301,10 +307,10 @@ export class Decimal128 {
     if (!isDigit(representation[index]) && representation[index] !== '.') {
       if (representation[index] === 'i' || representation[index] === 'I') {
         return new Decimal128(
-          Buffer.from(isNegative ? INF_NEGATIVE_BUFFER : INF_POSITIVE_BUFFER),
+          isNegative ? INF_NEGATIVE_BUFFER : INF_POSITIVE_BUFFER,
         );
       } else if (representation[index] === 'N') {
-        return new Decimal128(Buffer.from(NAN_BUFFER));
+        return new Decimal128(NAN_BUFFER);
       }
     }
 
@@ -340,7 +346,7 @@ export class Decimal128 {
     }
 
     if (sawRadix && !nDigitsRead) {
-      throw new BSONTypeError(
+      throw new BSONError(
         '' + representation + ' not a valid Decimal128 string',
       );
     }
@@ -351,7 +357,7 @@ export class Decimal128 {
       const match = representation.substr(++index).match(EXPONENT_REGEX);
 
       // No digits read
-      if (!match || !match[2]) return new Decimal128(Buffer.from(NAN_BUFFER));
+      if (!match || !match[2]) return new Decimal128(NAN_BUFFER);
 
       // Get exponent
       exponent = parseInt(match[0], 10);
@@ -361,7 +367,7 @@ export class Decimal128 {
     }
 
     // Return not a number
-    if (representation[index]) return new Decimal128(Buffer.from(NAN_BUFFER));
+    if (representation[index]) return new Decimal128(NAN_BUFFER);
 
     // Done reading input
     // Find first non-zero digit in digits
@@ -493,9 +499,7 @@ export class Decimal128 {
                 digits[dIdx] = 1;
               } else {
                 return new Decimal128(
-                  Buffer.from(
-                    isNegative ? INF_NEGATIVE_BUFFER : INF_POSITIVE_BUFFER,
-                  ),
+                  isNegative ? INF_NEGATIVE_BUFFER : INF_POSITIVE_BUFFER,
                 );
               }
             }
@@ -587,7 +591,7 @@ export class Decimal128 {
     }
 
     // Encode into a buffer
-    const buffer = Buffer.alloc(16);
+    const buffer = ByteUtils.allocate(16);
     index = 0;
 
     // Encode the low 64 bits of the decimal
@@ -861,7 +865,3 @@ export class Decimal128 {
     return `new Decimal128("${this.toString()}")`;
   }
 }
-
-Object.defineProperty(Decimal128.prototype, '_bsontype', {
-  value: 'Decimal128',
-});

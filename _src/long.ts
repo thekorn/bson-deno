@@ -1,5 +1,5 @@
+import { BSONError } from './error.ts';
 import type { EJSONOptions } from './extended_json.ts';
-import { isObjectLike } from './parser/utils.ts';
 import type { Timestamp } from './timestamp.ts';
 
 interface LongWASMHelpers {
@@ -387,10 +387,14 @@ export interface LongExtended {
  * Common constant values ZERO, ONE, NEG_ONE, etc. are found as static properties on this class.
  */
 export class Long {
-  _bsontype!: 'Long';
+  get _bsontype(): 'Long' {
+    return 'Long';
+  }
 
   /** An indicator used to reliably determine if an object is a Long or not. */
-  __isLong__!: true;
+  get __isLong__(): boolean {
+    return true;
+  }
 
   /**
    * The high 32 bits as a signed value.
@@ -425,8 +429,6 @@ export class Long {
     high?: number | boolean,
     unsigned?: boolean,
   ) {
-    if (!(this instanceof Long)) return new Long(low, high, unsigned);
-
     if (typeof low === 'bigint') {
       Object.assign(this, Long.fromBigInt(low, !!high));
     } else if (typeof low === 'string') {
@@ -436,13 +438,6 @@ export class Long {
       this.high = (high as number) | 0;
       this.unsigned = !!unsigned;
     }
-
-    Object.defineProperty(this, '__isLong__', {
-      value: true,
-      configurable: false,
-      writable: false,
-      enumerable: false,
-    });
   }
 
   static TWO_PWR_24 = Long.fromInt(TWO_PWR_24_DBL);
@@ -550,7 +545,7 @@ export class Long {
    * @returns The corresponding Long value
    */
   static fromString(str: string, unsigned?: boolean, radix?: number): Long {
-    if (str.length === 0) throw Error('empty string');
+    if (str.length === 0) throw new BSONError('empty string');
     if (
       str === 'NaN' || str === 'Infinity' || str === '+Infinity' ||
       str === '-Infinity'
@@ -564,10 +559,10 @@ export class Long {
       unsigned = !!unsigned;
     }
     radix = radix || 10;
-    if (radix < 2 || 36 < radix) throw RangeError('radix');
+    if (radix < 2 || 36 < radix) throw new BSONError('radix');
 
     let p;
-    if ((p = str.indexOf('-')) > 0) throw Error('interior hyphen');
+    if ((p = str.indexOf('-')) > 0) throw new BSONError('interior hyphen');
     else if (p === 0) {
       return Long.fromString(str.substring(1), unsigned, radix).neg();
     }
@@ -637,7 +632,12 @@ export class Long {
    * Tests if the specified object is a Long.
    */
   static isLong(value: unknown): value is Long {
-    return isObjectLike(value) && value['__isLong__'] === true;
+    return (
+      value != null &&
+      typeof value === 'object' &&
+      '__isLong__' in value &&
+      value.__isLong__ === true
+    );
   }
 
   /**
@@ -736,7 +736,7 @@ export class Long {
    */
   divide(divisor: string | number | Long | Timestamp): Long {
     if (!Long.isLong(divisor)) divisor = Long.fromValue(divisor);
-    if (divisor.isZero()) throw Error('division by zero');
+    if (divisor.isZero()) throw new BSONError('division by zero');
 
     // use wasm support if present
     if (wasm) {
@@ -1156,13 +1156,11 @@ export class Long {
         this.high >> numBits,
         this.unsigned,
       );
-    } else {
-      return Long.fromBits(
+    } else {return Long.fromBits(
         this.high >> (numBits - 32),
         this.high >= 0 ? 0 : -1,
         this.unsigned,
-      );
-    }
+      );}
   }
 
   /** This is an alias of {@link Long.shiftRight} */
@@ -1297,7 +1295,7 @@ export class Long {
    */
   toString(radix?: number): string {
     radix = radix || 10;
-    if (radix < 2 || 36 < radix) throw RangeError('radix');
+    if (radix < 2 || 36 < radix) throw new BSONError('radix');
     if (this.isZero()) return '0';
     if (this.isNegative()) {
       // Unsigned Longs are never negative
@@ -1384,6 +1382,3 @@ export class Long {
     return `new Long("${this.toString()}"${this.unsigned ? ', true' : ''})`;
   }
 }
-
-Object.defineProperty(Long.prototype, '__isLong__', { value: true });
-Object.defineProperty(Long.prototype, '_bsontype', { value: 'Long' });

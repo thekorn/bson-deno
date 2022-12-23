@@ -1,5 +1,5 @@
-import { Buffer } from './buffer.deno.ts';
-import { BSONTypeError } from './error.ts';
+import { BSONError } from './error.ts';
+import { ByteUtils } from './utils/byte_utils.ts';
 
 // Validation regex for v4 uuid (validates with or without dashes)
 const VALIDATION_REGEX =
@@ -8,29 +8,29 @@ const VALIDATION_REGEX =
 export const uuidValidateString = (str: string): boolean =>
   typeof str === 'string' && VALIDATION_REGEX.test(str);
 
-export const uuidHexStringToBuffer = (hexString: string): Buffer => {
+export const uuidHexStringToBuffer = (hexString: string): Uint8Array => {
   if (!uuidValidateString(hexString)) {
-    throw new BSONTypeError(
+    throw new BSONError(
       'UUID string representations must be a 32 or 36 character hex string (dashes excluded/included). Format: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" or "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".',
     );
   }
 
   const sanitizedHexString = hexString.replace(/-/g, '');
-  return Buffer.from(sanitizedHexString, 'hex');
+  return ByteUtils.fromHex(sanitizedHexString);
 };
 
-export const bufferToUuidHexString = (
-  buffer: Buffer,
+export function bufferToUuidHexString(
+  buffer: Uint8Array,
   includeDashes = true,
-): string =>
-  includeDashes
-    ? buffer.toString('hex', 0, 4) +
-      '-' +
-      buffer.toString('hex', 4, 6) +
-      '-' +
-      buffer.toString('hex', 6, 8) +
-      '-' +
-      buffer.toString('hex', 8, 10) +
-      '-' +
-      buffer.toString('hex', 10, 16)
-    : buffer.toString('hex');
+): string {
+  if (includeDashes) {
+    return [
+      ByteUtils.toHex(buffer.subarray(0, 4)),
+      ByteUtils.toHex(buffer.subarray(4, 6)),
+      ByteUtils.toHex(buffer.subarray(6, 8)),
+      ByteUtils.toHex(buffer.subarray(8, 10)),
+      ByteUtils.toHex(buffer.subarray(10, 16)),
+    ].join('-');
+  }
+  return ByteUtils.toHex(buffer);
+}
