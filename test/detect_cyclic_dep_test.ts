@@ -15,7 +15,9 @@ describe('Cyclic Dependencies', function () {
         // Attempt to serialize cyclic dependency
         BSON.serialize(a);
       } catch (err) {
-        expect('Cannot convert circular structure to BSON').toEqual(err.message);
+        expect('Cannot convert circular structure to BSON').toEqual(
+          err.message,
+        );
       }
     },
   );
@@ -35,7 +37,9 @@ describe('Cyclic Dependencies', function () {
         // Attempt to serialize cyclic dependency
         BSON.serialize(a);
       } catch (err) {
-        expect('Cannot convert circular structure to BSON').toEqual(err.message);
+        expect('Cannot convert circular structure to BSON').toEqual(
+          err.message,
+        );
       }
     },
   );
@@ -54,7 +58,9 @@ describe('Cyclic Dependencies', function () {
         // Attempt to serialize cyclic dependency
         BSON.serialize(a);
       } catch (err) {
-        expect('Cannot convert circular structure to BSON').toEqual(err.message);
+        expect('Cannot convert circular structure to BSON').toEqual(
+          err.message,
+        );
       }
     },
   );
