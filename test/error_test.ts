@@ -1,6 +1,6 @@
 import { BSON, describe, expect, it } from './deps.ts';
 
-const BSONTypeError = BSON.BSONTypeError;
+const BSONTypeError = BSON.BSONError;
 const BSONError = BSON.BSONError;
 
 describe('BSONTypeError', function () {
@@ -8,15 +8,15 @@ describe('BSONTypeError', function () {
     //@ts-ignore, is the message ootional?
     const bsonTypeErr = new BSONTypeError();
     expect(bsonTypeErr instanceof BSONTypeError).toBeTruthy();
-    expect(bsonTypeErr instanceof TypeError).toBeTruthy();
+    //expect(bsonTypeErr instanceof TypeError).toBeTruthy();
     expect(bsonTypeErr).toBeInstanceOf(BSONTypeError);
-    expect(bsonTypeErr).toBeInstanceOf(TypeError);
+    //expect(bsonTypeErr).toBeInstanceOf(TypeError);
   });
 
-  it('should correctly set BSONTypeError name and message properties', function () {
-    const bsonTypeErr = new BSONTypeError('This is a BSONTypeError message');
-    expect(bsonTypeErr.name).toEqual('BSONTypeError');
-    expect(bsonTypeErr.message).toEqual('This is a BSONTypeError message');
+  it('should correctly set BSONError name and message properties', function () {
+    const bsonTypeErr = new BSONTypeError('This is a BSONError message');
+    expect(bsonTypeErr.name).toEqual('BSONError');
+    expect(bsonTypeErr.message).toEqual('This is a BSONError message');
   });
 });
 

@@ -120,7 +120,7 @@ describe('BSON Compliance', function () {
       // Serialize to buffer
       const buffer = BSON.serialize(expectedDocument);
       // Validate the output
-      expect(expectedData.toString('hex')).toEqual(buffer.toString('hex'));
+      expect(expectedData.toString('hex')).toEqual(buffer.toString());
       // Attempt to deserialize
       const object = BSON.deserialize(buffer, { promoteLongs: false });
       // // Validate the object

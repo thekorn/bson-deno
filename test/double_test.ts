@@ -88,14 +88,4 @@ describe('BSON Double Precision', function () {
       expect(newVal).toBeNaN();
     });
   });
-
-  it('NODE-4335: does not preserve -0 in serialize-deserialize roundtrip if JS number is used', function () {
-    // TODO (NODE-4335): -0 should be serialized as double
-    // This test is demonstrating the behavior of -0 being serialized as an int32 something we do NOT want to unintentionally change, but may want to change in the future, which the above ticket serves to track.
-    const value = -0;
-    const serializedDouble = BSON.serialize({ d: value });
-    const type = serializedDouble[4];
-    expect(type).not.toEqual(BSON.BSON_DATA_NUMBER);
-    expect(type).toEqual(BSON.BSON_DATA_INT);
-  });
 });
