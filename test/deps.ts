@@ -6,4 +6,3 @@ import { describe } from 'https://deno.land/x/deno_mocha/mod.ts';
 export const context = describe;
 
 export * as BSON from '../mod.ts';
-export { ensureBuffer } from '../_src/ensure_buffer.ts';
