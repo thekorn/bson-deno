@@ -1,6 +1,5 @@
 [
   "bson_corpus.spec.test",
-  "bson_node_only_tests",
   "bson_older_versions_tests",
   "bson_test",
   "byte_utils.test.ts",

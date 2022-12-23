@@ -1,39 +1,49 @@
-import * as path from "https://deno.land/std/path/mod.ts";
-import * as fs from "https://deno.land/std/fs/mod.ts";
+import * as path from 'https://deno.land/std/path/mod.ts';
+import * as fs from 'https://deno.land/std/fs/mod.ts';
 const Binary = BSON.Binary;
-import { assertBuffersEqual } from './tools/utils.ts'
+import { assertBuffersEqual } from './tools/utils.ts';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
 
 import { BSON, describe, expect, it } from './deps.ts';
 const __dirname = path.dirname(path.fromFileUrl(import.meta.url));
 
 describe('BSON - Node only', function () {
-  it('Should Correctly Serialize and Deserialize a big Binary object', function (done) {
-    var data = Deno.readFileSync(path.resolve(__dirname, './data/test_gs_weird_bug.png'));
-    var bin = new Binary();
-    bin.write(data, 0);
-    var doc = { doc: bin };
-    var serialized_data = BSON.serialize(doc);
+  it(
+    'Should Correctly Serialize and Deserialize a big Binary object',
+    function (done) {
+      var data = Deno.readFileSync(
+        path.resolve(__dirname, './data/test_gs_weird_bug.png'),
+      );
+      var bin = new Binary();
+      bin.write(data, 0);
+      var doc = { doc: bin };
+      var serialized_data = BSON.serialize(doc);
 
-    var serialized_data2 = Buffer.alloc(BSON.calculateObjectSize(doc));
-    BSON.serializeWithBufferAndIndex(doc, serialized_data2);
-    assertBuffersEqual(serialized_data, serialized_data2);
+      var serialized_data2 = Buffer.alloc(BSON.calculateObjectSize(doc));
+      BSON.serializeWithBufferAndIndex(doc, serialized_data2);
+      assertBuffersEqual(serialized_data, serialized_data2);
 
-    var deserialized_data = BSON.deserialize(serialized_data);
-    expect(doc.doc.value()).toEqual(deserialized_data.doc.value());
-  });
+      var deserialized_data = BSON.deserialize(serialized_data);
+      expect(doc.doc.value()).toEqual(deserialized_data.doc.value());
+    },
+  );
 });
 
 describe('Full BSON - Node only', function () {
-  it('Should Correctly Serialize and Deserialize a big Binary object', function (done) {
-    var data = Deno.readFileSync(path.resolve(__dirname, './data/test_gs_weird_bug.png'));
-    var bin = new Binary();
-    bin.write(data, 0);
-    var doc = { doc: bin };
-    var serialized_data = BSON.serialize(doc);
-    var deserialized_data = BSON.deserialize(serialized_data);
-    expect(doc.doc.value()).toEqual(deserialized_data.doc.value());
-  });
+  it(
+    'Should Correctly Serialize and Deserialize a big Binary object',
+    function (done) {
+      var data = Deno.readFileSync(
+        path.resolve(__dirname, './data/test_gs_weird_bug.png'),
+      );
+      var bin = new Binary();
+      bin.write(data, 0);
+      var doc = { doc: bin };
+      var serialized_data = BSON.serialize(doc);
+      var deserialized_data = BSON.deserialize(serialized_data);
+      expect(doc.doc.value()).toEqual(deserialized_data.doc.value());
+    },
+  );
 
   //it('Should Correctly Deserialize bson file from mongodump', function (done) {
   //  var data = Deno.readFileSync(path.resolve(__dirname, './data/test.bson'));

@@ -46,11 +46,16 @@ const fs = require('fs');
 function findScenarios() {
   return fs
     .readdirSync(path.join(__dirname, '../specs/bson-corpus'))
-    .filter(x => x.indexOf('json') !== -1)
-    .map(x =>
+    .filter((x) => x.indexOf('json') !== -1)
+    .map((x) =>
       Object.assign(
-        JSON.parse(fs.readFileSync(path.join(__dirname, '../specs/bson-corpus', x), 'utf8')),
-        { _filename: x.replace('.json', '') }
+        JSON.parse(
+          fs.readFileSync(
+            path.join(__dirname, '../specs/bson-corpus', x),
+            'utf8',
+          ),
+        ),
+        { _filename: x.replace('.json', '') },
       )
     );
 }
