@@ -1,11 +1,9 @@
-import * as path from 'https://deno.land/std/path/mod.ts';
-import * as fs from 'https://deno.land/std/fs/mod.ts';
-const Binary = BSON.Binary;
+import * as path from "https://deno.land/std@0.170.0/path/mod.ts";
 import { assertBuffersEqual } from './tools/utils.ts';
-import { Buffer } from 'https://esm.sh/buffer@6.0.3';
+import { BSON, describe, expect, it, Buffer } from './deps.ts';
 
-import { BSON, describe, expect, it } from './deps.ts';
 const __dirname = path.dirname(path.fromFileUrl(import.meta.url));
+const Binary = BSON.Binary;
 
 describe('BSON - Node only', function () {
   it(
